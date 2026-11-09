@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "./supabase";
 import Admin from "./Admin";
@@ -9,7 +8,6 @@ const PENDING_PAYMENT_KEY = "brownes_pending_payment";
 function Storefront() {
   const [cart, setCart] = useState([]);
   const [category, setCategory] = useState("All");
-  const [searchTerm, setSearchTerm] = useState("");
   const [question, setQuestion] = useState("");
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -252,7 +250,9 @@ function Storefront() {
     setPaymentSuccess(false);
 
     try {
+      // Generate checkout security details before creating the order.
       const checkoutToken = crypto.randomUUID();
+      const orderId = crypto.randomUUID();
 
       const orderItems = cart.map((item) => ({
         product_id: item.id,
@@ -263,10 +263,12 @@ function Storefront() {
         quantity: 1,
       }));
 
-      const { data: order, error: orderError } = await supabase
+      // Create the order without requesting permission to read it.
+      const { error: orderError } = await supabase
         .from("orders")
         .insert([
           {
+            id: orderId,
             customer_name: customerName.trim(),
             customer_phone: customerPhone.trim(),
             customer_email: customerEmail.trim()
@@ -280,21 +282,20 @@ function Storefront() {
             status: "Pending",
             payment_status: "Unpaid",
           },
-        ])
-        .select("id")
-        .single();
+        ]);
 
-      if (orderError || !order) {
-        console.error("Order creation error:", orderError?.message);
+      if (orderError) {
+        console.error("Order creation error:", orderError);
         throw new Error(
-          "We couldn't create your order. Please try again."
+          "We couldn't create your order. " + orderError.message
         );
       }
 
+      // Initialize Paystack using the generated order ID.
       const { data: paymentData, error: paymentError } =
         await supabase.functions.invoke("paystack-initialize", {
           body: {
-            orderId: order.id,
+            orderId,
             email: customerEmail.trim()
               ? customerEmail.trim().toLowerCase()
               : null,
@@ -321,14 +322,16 @@ function Storefront() {
         );
       }
 
+      // Save payment details for verification after redirect.
       sessionStorage.setItem(
         PENDING_PAYMENT_KEY,
         JSON.stringify({
-          orderId: order.id,
+          orderId,
           checkoutToken,
         })
       );
 
+      // Redirect the customer to Paystack.
       window.location.assign(paymentData.authorization_url);
     } catch (error) {
       console.error("Checkout error:", error);
@@ -337,7 +340,7 @@ function Storefront() {
     }
   };
 
-  // Securely check an order using its Order ID and checkout phone number.
+  // Securely check an order using its Order ID and phone number.
   const trackOrder = async () => {
     if (!trackingOrderId.trim() || !trackingPhone.trim()) {
       setTrackingMessage("Please enter your Order ID and phone number.");
@@ -381,33 +384,10 @@ function Storefront() {
     }
   };
 
-  // Search across perfume names, brands, categories and fragrance details.
-  const visibleProducts = products.filter((item) => {
-    const matchesCategory =
-      category === "All" || item.category === category;
-
-    const searchableText = [
-      item.name,
-      item.brand,
-      item.category,
-      item.description,
-      item.topNotes,
-      item.middleNotes,
-      item.baseNotes,
-      item.concentration,
-      item.occasion,
-      item.size,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-
-    const matchesSearch = searchableText.includes(
-      searchTerm.trim().toLowerCase()
-    );
-
-    return matchesCategory && matchesSearch;
-  });
+  const visibleProducts =
+    category === "All"
+      ? products
+      : products.filter((item) => item.category === category);
 
   return (
     <div className="store">
@@ -584,7 +564,7 @@ function Storefront() {
           justify-content: center;
           gap: 10px;
           flex-wrap: wrap;
-          margin-bottom: 25px;
+          margin-bottom: 30px;
         }
 
         .filter {
@@ -598,65 +578,6 @@ function Storefront() {
         .filter.active {
           background: #201d18;
           color: white;
-        }
-
-        /* Product search */
-        .search-container {
-          max-width: 620px;
-          margin: 0 auto 35px;
-          position: relative;
-        }
-
-        .product-search {
-          width: 100%;
-          padding: 17px 50px 17px 48px;
-          border: 1px solid #c5a45d;
-          border-radius: 3px;
-          background: rgba(255,255,255,.92);
-          color: #171612;
-          font: 15px Arial, sans-serif;
-          outline: none;
-          box-shadow: 0 4px 15px rgba(0,0,0,.04);
-        }
-
-        .product-search:focus {
-          border-color: #8c6b2e;
-          box-shadow: 0 0 0 3px rgba(197,164,93,.16);
-        }
-
-        .product-search::placeholder {
-          color: #777064;
-          opacity: 1;
-        }
-
-        .search-icon {
-          position: absolute;
-          left: 17px;
-          top: 50%;
-          transform: translateY(-50%);
-          font-size: 19px;
-          color: #a17f39 !important;
-          pointer-events: none;
-        }
-
-        .clear-search {
-          position: absolute;
-          right: 13px;
-          top: 50%;
-          transform: translateY(-50%);
-          border: none;
-          background: transparent;
-          color: #6d6049 !important;
-          cursor: pointer;
-          font-size: 13px;
-          padding: 8px;
-        }
-
-        .search-count {
-          text-align: center;
-          font-size: 12px;
-          color: #756b5c;
-          margin: -20px 0 25px;
         }
 
         .products {
@@ -861,10 +782,6 @@ function Storefront() {
           .product img { height: 320px; }
 
           .section { padding: 55px 6%; }
-
-          .search-container {
-            margin-bottom: 30px;
-          }
         }
 
         .store, .store * {
@@ -880,22 +797,6 @@ function Storefront() {
         .checkout-input::placeholder {
           color: #000000;
           opacity: 1;
-        }
-
-        .product-search {
-          color: #171612 !important;
-        }
-
-        .product-search::placeholder {
-          color: #777064 !important;
-        }
-
-        .search-icon {
-          color: #a17f39 !important;
-        }
-
-        .clear-search {
-          color: #6d6049 !important;
         }
 
         /* Fixed mobile navigation */
@@ -1020,37 +921,6 @@ function Storefront() {
           ))}
         </div>
 
-        {/* Search perfumes */}
-        <div className="search-container">
-          <span className="search-icon" aria-hidden="true">⌕</span>
-          <input
-            className="product-search"
-            type="search"
-            value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
-            placeholder="Search by perfume name, brand or scent..."
-            aria-label="Search perfumes"
-          />
-          {searchTerm && (
-            <button
-              className="clear-search"
-              type="button"
-              onClick={() => setSearchTerm("")}
-              aria-label="Clear search"
-            >
-              CLEAR ✕
-            </button>
-          )}
-        </div>
-
-        {!loading && !loadError && (
-          <p className="search-count">
-            {searchTerm.trim()
-              ? `${visibleProducts.length} fragrance${visibleProducts.length === 1 ? "" : "s"} found`
-              : `${visibleProducts.length} fragrance${visibleProducts.length === 1 ? "" : "s"} available`}
-          </p>
-        )}
-
         {loading ? (
           <div className="empty-products">
             <h3>Loading our fragrances...</h3>
@@ -1061,27 +931,10 @@ function Storefront() {
           </div>
         ) : visibleProducts.length === 0 ? (
           <div className="empty-products">
-            <h3>
-              {searchTerm.trim()
-                ? "No matching fragrances found."
-                : "No fragrances available yet."}
-            </h3>
+            <h3>No fragrances available yet.</h3>
             <p className="muted">
-              {searchTerm.trim()
-                ? "Try another perfume name, brand or fragrance note."
-                : "Please check back soon for our latest collection."}
+              Please check back soon for our latest collection.
             </p>
-            {searchTerm.trim() && (
-              <button
-                className="gold-button"
-                onClick={() => {
-                  setSearchTerm("");
-                  setCategory("All");
-                }}
-              >
-                VIEW ALL FRAGRANCES
-              </button>
-            )}
           </div>
         ) : (
           <div className="products">
