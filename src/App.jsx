@@ -230,7 +230,6 @@ function Storefront() {
       return;
     }
 
-    // Corrected email validation expression.
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (
@@ -573,6 +572,13 @@ function Storefront() {
         .section-heading h2 {
           font: 36px Georgia, serif;
           margin: 12px 0;
+        }
+
+        /* Only these three section titles are black */
+        #shop .section-heading h2,
+        #track .section-heading h2,
+        #cart .section-heading h2 {
+          color: #000000 !important;
         }
 
         .search-container {
